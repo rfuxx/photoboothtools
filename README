@@ -1,0 +1,207 @@
+Photo Booth Tools
+=================
+
+A collection of utilities to build a photo booth.
+Photo booth is the idea that on a wedding, party or other event you set up a
+photo camera and printer where guests can take photos of themselves and have
+them directly printed.
+In order to "compete" with the mobile phone selfies which the guests will
+surely also take, you likely want to use a decent DSLR or EVIL camera for
+the photo booth and build a nice scene/background with a well metered
+(flash) light setup. (To learn about light setting&metering check out books
+and practical workshops about studio photography.)
+
+For the logic between capturing a photo from the camera and sending it to
+a printer, there will need to be some computer software running somewhere.
+This tool collection is based on the idea that using a "Pi"-like computer
+(Raspberry Pi / Banana Pi) to wire the photo booth components together,
+would be unobtrusive and keep the hardware out of sight.
+
+As cool and as versatile as these minicomputers are, they are unfortunately
+also considerably slower than most desktop computers when it comes to
+handling photos in full resolution. Even with the optimisations that these
+tools are providing, you will probably still find the first Raspberry models
+(the original A and B) too slow. I found a "Banana Pi" to give a somewhat
+acceptable performance, and I have not yet tried with the Raspberry 2 model.
+
+
+
+continuousCameraCapture
+-----------------------
+
+Automatically download the new files from the camera as photos are taken.
+
+Usage: continuousCameraCapture <receivepath>
+
+This tool does a similar job like gphoto2 --wait-event-and-download
+with the following additional functionaities:
+ - queues downloads so that jpg files are downloaded first
+   (in case you shoot raw+jpg this will give you the viewable files faster,
+   and the raw file is reordered for later download)
+ - renames downloads according to exif date
+ - rotates jpegs automatically (and handles exif similar as with exiftran)
+
+The idea to use this tool for photo booth purposes is that you set up the
+camera with a standard remote wire trigger or wireless trigger. Photos are
+taken without computer action but they are automatically downloaded to the
+<receivepath> on the computer. You should then have a tool monitoring the
+receive directory for new files and handle them (either directly print or
+show them on a display for the user to decide or add to a slideshow,
+whatever you may think of...)
+
+When downloading mixed jpg and raw(other) files, note that
+- the jpg files will be created with the correctly exifdate-based filename
+  right away, even the auto-rotated ones. This is perfect so that the tool
+  which is going to pick up the jpg files from the <receivepath> can make
+  use of inotify monitoring very easily.
+- the raw and other files are first created with the camera-based filename
+  and then renamed to the correct rawdate-based file name only if any date
+  information can be found in them. This is not so good for picking them up
+  with inotify monitoring.
+
+Known issues:
+ - ERROR: You need to specify a folder starting with /store_xxxxxxxxx/
+   => I sometimes see this error on the reordered .cr2 file downloads when
+      shooting burst series on my Canon EOS camera.
+      It seems as if the gphoto2 library sometimes gets confused when this
+      tool tries to receive the files in different order than they were
+      created on the camera.
+      I doubt that this problem is due to a bug in my code for
+      continuousCameraCapture, because actually /store_xxxxxxxxx/ seems to
+      be an internal name which is used between the camera and the
+      libgphoto2, but never appearing between the libgphoto2 and application
+      software like continuousCameraCapture.
+      As an interesting observation, I thought these errors had been gone
+      after I had updated libgphoto2 from Bananian "wheezy" with a
+      custom-compiled version of libgphotos 2.5.5.1, but the errors were
+      back after the Bananian "jessie" upgrade, even with recompiled custom
+      versions of libgphoto2 2.5.5.1 and 2.5.8.
+      (More analysis welcome. Fixes welcome.)
+
+
+
+quickJpegGutenPrint
+-------------------
+
+Optimized print tool for JPEG pictures via Gutenprint printer drivers.
+
+Usage: quickJpegGutenPrint [-P|--cups-printer PRINTER]
+[-D|--gutenprint-driver DRIVER] [-C|--cups-option OPTION=VALUE]
+[-G|--gutenprint-parameter PARAMETER=VALUE] [--show-cups-options]
+[--show-gutenprint-parameters] [-q|-v|-vv] filename.jpg [...]
+
+Parameters:
+
+-P|--cups-printer PRINTER
+	Select the printer on which you want to have the picture printed.
+	If not specified, the default is according to cups/lpr rules (which
+	may involve the $PRINTER environment variable and the lpoptions
+	command).
+
+-D|--gutenprint-driver DRIVER
+	Select which gutenprint driver to use for this printer. If not
+	specified, will attempt to autodetect the gutenprint driver based on
+	looking up details of the cups printer definition for the selected
+	printer.
+
+-C|--cups-option OPTION=VALUE
+	Specify additional cups settings (options) for the print job.
+	You can put -C|--cups-option multiple times in order to set multiple
+	options for the cups print job.
+
+-G|--gutenprint-parameter PARAMETER=VALUE
+	Specify additional gutenprint settings (parameters) in order to
+	optimize your print output. Note that many of these parameter names
+	can be specific to your printer and to your gutenprint version.
+	You can put -G|--gutenprint-parameter multiple times in order to set
+	multiple parameters for the gutenprint driver.
+
+	Limitation: A parameter which appears in the
+        --show-gutenprint-parameters listing with one of the types
+        (Curve)/(File)/(Raw)/(Array) cannot be specified. Actually this
+	would not be generally impossible, but there is simply no
+	implementation to parse such parameter types from the commandline.
+	If you really, really need it, please grab the source code, write an
+	implementation for it and share it back.
+
+--show-cups-options
+	Query the specified (or auto-selected) cups printer and show its
+	options. Actually most of these "options" are just descriptive stuff
+	for the printer. The output --show-cups-options is not related (and
+	surely not suggestive) with what you can specify for
+	-C|--cups-option
+
+--show-gutenprint-parameters
+	Query the specified (or auto-selected) gutenprint driver what
+	parameters are available for it and list all available parameters in
+	the form of
+		Category: ParameterName (Type) DefaultValue AllowedRange
+	where you can then use the ParameterName and a valid value with the
+	-G|--gutenprint-parameter option.
+
+-q	Quiet. Do not show the printer/driver auto-select messages.
+
+-v	Verbose. Show each filename when it is processed.
+
+-vv	Very Verbose. Show detailed additional information.
+
+Example:
+
+quickJpegGutenPrint -P Canon_CP900 --gutenprint-parameter ImageType=Photo --gutenprint-parameter Borderless=true *.jpg
+
+
+The idea to use this tool was originally to speed up the part of the print
+process from starting the print job until the printer makes its first move.
+
+This was because printing via lpr / via the normal Linux/Unix/CUPS print
+process has been very slow in the past. Oh, do not get me wrong: This is not
+to criticize the standard printing as such - it is great that it is designed
+for really generic purposes so that every kind out output can be printed to
+any printer device.
+Older implementations of Linux/Unix printing seem to have been really slow
+because every file to be printed must be converted twice (first to a generic
+intermediate format and then to the printer specific raw output), and this
+has apparently happened on disk and with complex formats and using complex
+conversion engines.
+
+Modern versions of CUPS seem to have much improved implementations - on some
+installations I could hardly notice a difference anymore between printing
+via lpr versus printing via quickJpegGutenPrint. This is surely because the
+modern print system implementations are using the same kind of optimisations
+as quickJpegGutenPrint does.
+
+So finally, quickJpegGutenPrint's optimisations are in three areas:
+- Optimized print data conversion by streaming the image rasterlines
+  directly from the jpeg loader to the printer driver (no extra copy of the
+  picture is held im memory neither on disk).
+- Matching picture orientation with the print paper orientation by using
+  optimized JPEG rotation (the rotation happens during the loading of the
+  JPEG and not on the fully-blown image pixels).
+- IDCT-Scaling the JPEG image during decoding so that it will be decoded
+  only to (slightly larger than) the print size (avoids to waste memory and
+  time resources to unnecessariliy manage the full image size).
+There will still be the raw printer data file in the cups spool directory,
+but of course you cannot avoid that for having proper print queue
+management.
+
+
+
+Dependencies
+------------
+
+- libjpeg
+- libexif
+- libgphoto2
+- libraw
+- libcups
+- libgutenprint
+
+
+Credits
+-------
+
+- had started with sample-tether.c from libgphoto2 in order to extend it to
+  all the functionality for continuousCameraCapture.c
+- using libjpeg's "transupp" for the basic JPEG rotation code
+- heavy inspiration from fbida's "exiftran" for EXIF data/thumbnail handling
+  on roatation
